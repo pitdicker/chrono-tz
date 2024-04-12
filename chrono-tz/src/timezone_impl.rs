@@ -1,9 +1,7 @@
 use core::cmp::Ordering;
 use core::fmt::{Debug, Display, Error, Formatter};
 
-use chrono::{
-    Duration, FixedOffset, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone,
-};
+use chrono::{FixedOffset, LocalResult, NaiveDate, NaiveDateTime, NaiveTime, Offset, TimeZone};
 
 use crate::binary_search::binary_search;
 use crate::timezones::Tz;
@@ -53,77 +51,6 @@ pub struct TzOffset {
     offset: FixedTimespan,
 }
 
-/// Detailed timezone offset components that expose any special conditions currently in effect.
-///
-/// This trait breaks down an offset into the standard UTC offset and any special offset
-/// in effect (such as DST) at a given time.
-///
-/// ```
-/// # extern crate chrono;
-/// # extern crate chrono_tz;
-/// use chrono::{Duration, Offset, TimeZone};
-/// use chrono_tz::Europe::London;
-/// use chrono_tz::OffsetComponents;
-///
-/// # fn main() {
-/// let london_time = London.ymd(2016, 5, 10).and_hms(12, 0, 0);
-///
-/// // London typically has zero offset from UTC, but has a 1h adjustment forward
-/// // when summer time is in effect.
-/// let lon_utc_offset = london_time.offset().base_utc_offset();
-/// let lon_dst_offset = london_time.offset().dst_offset();
-/// let total_offset = lon_utc_offset + lon_dst_offset;
-/// assert_eq!(lon_utc_offset, Duration::hours(0));
-/// assert_eq!(lon_dst_offset, Duration::hours(1));
-///
-/// // As a sanity check, make sure that the total offsets added together are equivalent to the
-/// // total fixed offset.
-/// assert_eq!(total_offset.num_seconds(), london_time.offset().fix().local_minus_utc() as i64);
-/// # }
-/// ```
-pub trait OffsetComponents {
-    /// The base offset from UTC; this usually doesn't change unless the government changes something
-    fn base_utc_offset(&self) -> Duration;
-    /// The additional offset from UTC that is currently in effect; typically for daylight saving time
-    fn dst_offset(&self) -> Duration;
-}
-
-/// Timezone offset name information.
-///
-/// This trait exposes display names that describe an offset in
-/// various situations.
-///
-/// ```
-/// # extern crate chrono;
-/// # extern crate chrono_tz;
-/// use chrono::{Duration, Offset, TimeZone};
-/// use chrono_tz::Europe::London;
-/// use chrono_tz::OffsetName;
-///
-/// # fn main() {
-/// let london_time = London.ymd(2016, 2, 10).and_hms(12, 0, 0);
-/// assert_eq!(london_time.offset().tz_id(), "Europe/London");
-/// // London is normally on GMT
-/// assert_eq!(london_time.offset().abbreviation(), "GMT");
-///
-/// let london_summer_time = London.ymd(2016, 5, 10).and_hms(12, 0, 0);
-/// // The TZ ID remains constant year round
-/// assert_eq!(london_summer_time.offset().tz_id(), "Europe/London");
-/// // During the summer, this becomes British Summer Time
-/// assert_eq!(london_summer_time.offset().abbreviation(), "BST");
-/// # }
-/// ```
-pub trait OffsetName {
-    /// The IANA TZDB identifier (ex: America/New_York)
-    fn tz_id(&self) -> &str;
-    /// The abbreviation to use in a longer timestamp (ex: EST)
-    ///
-    /// This takes into account any special offsets that may be in effect.
-    /// For example, at a given instant, the time zone with ID *America/New_York*
-    /// may be either *EST* or *EDT*.
-    fn abbreviation(&self) -> &str;
-}
-
 impl TzOffset {
     fn new(tz: Tz, offset: FixedTimespan) -> Self {
         TzOffset { tz, offset }
@@ -140,29 +67,25 @@ impl TzOffset {
     }
 }
 
-impl OffsetComponents for TzOffset {
-    fn base_utc_offset(&self) -> Duration {
-        Duration::seconds(self.offset.utc_offset as i64)
-    }
-
-    fn dst_offset(&self) -> Duration {
-        Duration::seconds(self.offset.dst_offset as i64)
-    }
-}
-
-impl OffsetName for TzOffset {
-    fn tz_id(&self) -> &str {
-        self.tz.name()
-    }
-
-    fn abbreviation(&self) -> &str {
-        self.offset.name
-    }
-}
-
 impl Offset for TzOffset {
     fn fix(&self) -> FixedOffset {
         self.offset.fix()
+    }
+
+    fn offset_from_standard(&self) -> Option<FixedOffset> {
+        Some(FixedOffset::east_opt(self.offset.dst_offset).unwrap())
+    }
+
+    fn abbreviation(&self) -> Option<&str> {
+        let abbr = self.offset.name;
+        match abbr.starts_with('+') || (abbr.starts_with('-') && abbr != "-00") {
+            true => None,
+            false => Some(abbr),
+        }
+    }
+
+    fn tz_name(&self) -> Option<&str> {
+        Some(self.tz.name())
     }
 }
 
