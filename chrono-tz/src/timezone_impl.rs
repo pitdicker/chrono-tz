@@ -24,7 +24,7 @@ pub struct FixedTimespan {
     /// The additional offset from UTC for this timespan; typically for daylight saving time
     pub dst_offset: i32,
     /// The name of this timezone, for example the difference between `EDT`/`EST`
-    pub name: &'static str,
+    pub name: Option<&'static str>,
 }
 
 impl Offset for FixedTimespan {
@@ -35,13 +35,28 @@ impl Offset for FixedTimespan {
 
 impl Display for FixedTimespan {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", self.name)
+        match self.name {
+            Some(abbr) => write!(f, "{}", abbr),
+            None => {
+                let offset = self.utc_offset + self.dst_offset;
+                let (sign, offset) = if offset < 0 { ('-', -offset) } else { ('+', offset) };
+                let hours = offset / 60;
+                let secs = offset % 60;
+                let mins = secs / 60;
+                let secs = secs % 60;
+                match (mins, secs) {
+                    (0, 0) => write!(f, "{}{:02}", sign, hours),
+                    (_, 0) => write!(f, "{}{:02}{:02}", sign, hours, mins),
+                    (_, _) => write!(f, "{}{:02}{:02}{:02}", sign, hours, mins, secs),
+                }
+            }
+        }
     }
 }
 
 impl Debug for FixedTimespan {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(f, "{}", self.name)
+        <FixedTimespan as Display>::fmt(self, f)
     }
 }
 
@@ -77,11 +92,7 @@ impl Offset for TzOffset {
     }
 
     fn abbreviation(&self) -> Option<&str> {
-        let abbr = self.offset.name;
-        match abbr.starts_with('+') || (abbr.starts_with('-') && abbr != "-00") {
-            true => None,
-            false => Some(abbr),
-        }
+        self.offset.name
     }
 
     fn tz_name(&self) -> Option<&str> {

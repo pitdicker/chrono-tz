@@ -33,9 +33,13 @@ fn strip_comments(mut line: String) -> String {
 fn format_rest(rest: Vec<(i64, FixedTimespan)>) -> String {
     let mut ret = "&[\n".to_string();
     for (start, FixedTimespan { utc_offset, dst_offset, name }) in rest {
+        let name = match name.starts_with('+') || (name.starts_with('-') && name != "-00") {
+            true => None,
+            false => Some(name),
+        };
         ret.push_str(&format!(
             "                    ({start}, FixedTimespan {{ \
-             utc_offset: {utc}, dst_offset: {dst}, name: \"{name}\" \
+             utc_offset: {utc}, dst_offset: {dst}, name: {name:?} \
              }}),\n",
             start = start,
             utc = utc_offset,
@@ -201,6 +205,11 @@ impl FromStr for Tz {{
     for zone in &zones {
         let timespans = table.timespans(zone).unwrap();
         let zone_name = convert_bad_chars(zone);
+        let name = timespans.first.name;
+        let name = match name.starts_with('+') || (name.starts_with('-') && name != "-00") {
+            true => None,
+            false => Some(name),
+        };
         writeln!(
             timezone_file,
             "            Tz::{zone} => {{
@@ -209,7 +218,7 @@ impl FromStr for Tz {{
                     first: FixedTimespan {{
                         utc_offset: {utc},
                         dst_offset: {dst},
-                        name: \"{name}\",
+                        name: {name:?},
                     }},
                     rest: REST
                 }}
@@ -218,7 +227,7 @@ impl FromStr for Tz {{
             rest = format_rest(timespans.rest),
             utc = timespans.first.utc_offset,
             dst = timespans.first.dst_offset,
-            name = timespans.first.name,
+            name = name,
         )?;
     }
     write!(
